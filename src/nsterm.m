@@ -6836,7 +6836,74 @@ ns_create_font_panel_buttons (id target, SEL select, SEL cancel_action)
     currentCursor = [NSCursor arrowCursor];
 
   if (!NSIsEmptyRect (visible))
+#ifdef HAVE_XWIDGETS
+    {
+      /* A child NSView (an xwidget's WKWebView) manages its own cursor
+	 from page content; covering its area with the frame's cursor
+	 rect would re-assert the frame pointer (usually the text
+	 I-beam) over the widget on every rect invalidation, fighting
+	 the widget's cursor.  Cover only the regions no visible
+	 subview occupies, so the widget's cursor wins inside its
+	 frame.  Subview complements are built by strip subtraction:
+	 each subview frame splits every covered rect into at most four
+	 remainder strips.  */
+      enum { NS_CURSOR_RECT_MAX = 64 };
+      NSRect rects[NS_CURSOR_RECT_MAX];
+      NSUInteger nrects = 1;
+      rects[0] = visible;
+      for (NSView *sub in [self subviews])
+	{
+	  NSRect rem[NS_CURSOR_RECT_MAX];
+	  NSUInteger nrem = 0;
+	  NSRect frame = [sub frame];
+
+	  if ([sub isHidden] || NSIsEmptyRect (frame))
+	    continue;
+	  for (NSUInteger i = 0; i < nrects; i++)
+	    {
+	      NSRect from = rects[i];
+	      NSRect inter = NSIntersectionRect (from, frame);
+
+	      if (NSIsEmptyRect (inter))
+		{
+		  if (nrem < NS_CURSOR_RECT_MAX)
+		    rem[nrem++] = from;
+		  continue;
+		}
+	      if (nrem + 4 > NS_CURSOR_RECT_MAX)
+		{
+		  /* Overflow: keep the rect covered rather than drop
+		     cursor handling for it (degrades to the old
+		     behavior for pathological subview counts).  */
+		  rem[nrem++] = from;
+		  continue;
+		}
+	      if (NSMinY (inter) > NSMinY (from))
+		rem[nrem++] = NSMakeRect (NSMinX (from), NSMinY (from),
+					  NSWidth (from),
+					  NSMinY (inter) - NSMinY (from));
+	      if (NSMaxY (from) > NSMaxY (inter))
+		rem[nrem++] = NSMakeRect (NSMinX (from), NSMaxY (inter),
+					  NSWidth (from),
+					  NSMaxY (from) - NSMaxY (inter));
+	      if (NSMinX (inter) > NSMinX (from))
+		rem[nrem++] = NSMakeRect (NSMinX (from), NSMinY (inter),
+					  NSMinX (inter) - NSMinX (from),
+					  NSHeight (inter));
+	      if (NSMaxX (from) > NSMaxX (inter))
+		rem[nrem++] = NSMakeRect (NSMaxX (inter), NSMinY (inter),
+					  NSMaxX (from) - NSMaxX (inter),
+					  NSHeight (inter));
+	    }
+	  memcpy (rects, rem, nrem * sizeof *rects);
+	  nrects = nrem;
+	}
+      for (NSUInteger i = 0; i < nrects; i++)
+	[self addCursorRect: rects[i] cursor: currentCursor];
+    }
+#else
     [self addCursorRect: visible cursor: currentCursor];
+#endif
 
 #if defined (NS_IMPL_GNUSTEP) || MAC_OS_X_VERSION_MIN_REQUIRED < 101300
 #if MAC_OS_X_VERSION_MAX_ALLOWED >= 101300
