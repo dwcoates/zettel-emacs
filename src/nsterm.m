@@ -504,6 +504,15 @@ hold_event (struct input_event *event)
   send_appdefined = YES;
 }
 
+/* Return true while Emacs has input events it has not read yet: in the
+   keyboard buffer, or held here for the next ns_read_socket.  */
+
+bool
+ns_input_unread (void)
+{
+  return hold_event_q.nr > 0 || kbd_buffer_events_waiting ();
+}
+
 static Lisp_Object
 append2 (Lisp_Object list, Lisp_Object item)
 /* --------------------------------------------------------------------------
@@ -1105,6 +1114,10 @@ ns_update_end (struct frame *f)
 
   unblock_input ();
   ns_updating_frame = NULL;
+
+#ifdef HAVE_XWIDGETS
+  nsxwidget_follow_selected_window (f);
+#endif
 }
 
 static void

@@ -29,6 +29,7 @@ along with GNU Emacs.  If not, see <https://www.gnu.org/licenses/>.  */
 
 #import <AppKit/AppKit.h>
 #import <WebKit/WebKit.h>
+#import <Carbon/Carbon.h> /* kVK_Escape */
 
 /* Thoughts on NS Cocoa xwidget and webkit2:
 
@@ -236,6 +237,47 @@ completionHandler:(void (^)(NSArray<NSURL *> *URLs))completionHandler
   [super mouseUp:event];
 }
 
+/* The keyboard follows Emacs's selected window.  A click in a web
+   view makes it the window's first responder (mouseDown: above), and
+   Emacs selects the web view's window once it reads that click.
+   Nothing else used to move the first responder: when Lisp later
+   selected another window, the web view kept the keyboard.  Plain
+   keys still reached Emacs through keyDown: below, but Escape did
+   not; AppKit beeped instead, and only a click on Emacs's own view
+   took the keyboard back.
+
+   So the web view hands the keyboard to Emacs's view whenever the
+   selected window of its frame does not show it.  The check runs at
+   the end of every frame update and on every key the web view gets.
+   It waits while Emacs has unread input, because the click that gave
+   the web view the keyboard may be among it and Emacs selects the
+   web view's window only once it reads that click.
+
+   EDGE names where the check ran, for the log.  Return the view the
+   keyboard was handed to, or nil when the web view keeps it.  */
+
+- (NSView *) yieldKeyboardUnlessSelected:(NSString *)edge
+{
+  if (ns_input_unread ())
+    return nil;
+
+  struct xwidget_view *xv = self.xw->xv;
+  if (xv)
+    {
+      struct frame *f = XFRAME (WINDOW_FRAME (XWINDOW (xv->w)));
+      if (EQ (FRAME_SELECTED_WINDOW (f), xv->w))
+        return nil;
+    }
+
+  EmacsView *view = (EmacsView *) [self.window delegate];
+  eassert ([view isKindOfClass:[EmacsView class]]);
+  NSLog (@"xwidget: handing the keyboard back to Emacs at %@: "
+         @"the selected window does not show the web view at %@ (%s)",
+         edge, self.URL, xv ? "shown elsewhere" : "not shown");
+  [self.window makeFirstResponder:view];
+  return view;
+}
+
 /* Basically we want keyboard events handled by emacs unless an input
    element has focus.  Especially, while incremental search, we set
    emacs as first responder to avoid focus held in an input element
@@ -243,6 +285,13 @@ completionHandler:(void (^)(NSArray<NSURL *> *URLs))completionHandler
 
 - (void) keyDown:(NSEvent *)event
 {
+  NSView *yielded = [self yieldKeyboardUnlessSelected:@"key"];
+  if (yielded)
+    {
+      [yielded keyDown:event];
+      return;
+    }
+
   Lisp_Object var = Fintern (build_string ("isearch-mode"), Qnil);
   Lisp_Object val = buffer_local_value (var, Fcurrent_buffer ());
   if (!EQ (val, Qunbound) && !EQ (val, Qnil))
@@ -272,7 +321,18 @@ completionHandler:(void (^)(NSArray<NSURL *> *URLs))completionHandler
           if (!hasFocus.boolValue)
             [self.xw->xv->emacswindow keyDown:event];
           else
-            [super keyDown:event];
+            {
+              if (event.keyCode == kVK_Escape)
+                NSLog (@"xwidget: Escape kept by the page at %@: "
+                       @"an input element holds the focus", self.URL);
+              [super keyDown:event];
+            }
+        }
+      else
+        {
+          NSLog (@"xwHasFocus: no result at %@; the key goes to Emacs",
+                 self.URL);
+          [self.xw->xv->emacswindow keyDown:event];
         }
     }];
 }
@@ -323,6 +383,18 @@ static NSString *xwScript;
 }
 
 @end
+
+void
+nsxwidget_follow_selected_window (struct frame *f)
+{
+  NSResponder *responder = [[FRAME_NS_VIEW (f) window] firstResponder];
+  /* The first responder may be a view inside the web view.  */
+  while ([responder isKindOfClass:[NSView class]]
+         && ![responder isKindOfClass:[XwWebView class]])
+    responder = [(NSView *) responder superview];
+  if ([responder isKindOfClass:[XwWebView class]])
+    [(XwWebView *) responder yieldKeyboardUnlessSelected:@"redisplay"];
+}
 
 /* Xwidget webkit commands.  */
 

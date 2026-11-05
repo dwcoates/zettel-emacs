@@ -79,4 +79,8 @@ void nsxwidget_move_view (struct xwidget_view *xv, int x, int y);
 void nsxwidget_move_widget_in_view (struct xwidget_view *xv, int x, int y);
 void nsxwidget_set_needsdisplay (struct xwidget_view *xv);
 
+/* Functions for keyboard focus.  */
+
+void nsxwidget_follow_selected_window (struct frame *f);
+
 #endif /* NSXWIDGET_H_INCLUDED */

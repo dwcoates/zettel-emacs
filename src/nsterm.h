@@ -1128,6 +1128,7 @@ extern void ns_set_offset (struct frame *f, int xoff, int yoff,
 extern const char *ns_xlfd_to_fontname (const char *xlfd);
 
 extern Lisp_Object ns_map_event_to_object (void);
+extern bool ns_input_unread (void);
 #ifdef __OBJC__
 extern Lisp_Object ns_string_from_pasteboard (id pb);
 extern void ns_string_to_pasteboard (id pb, Lisp_Object str);
