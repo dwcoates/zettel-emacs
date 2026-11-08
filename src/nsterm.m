@@ -6010,6 +6010,12 @@ ns_term_shutdown (int sig)
   NSTRACE_WHEN (NSTRACE_GROUP_EVENTS, "[EmacsApp sendEvent:]");
   NSTRACE_MSG ("Type: %d", type);
 
+  /* Where an Escape goes is logged as it arrives, so an Escape that never
+     reaches Emacs can be traced to the responder that took it.  */
+  if (type == NSEventTypeKeyDown && [theEvent keyCode] == kVK_Escape)
+    NSLog (@"keyboard: Escape arrives: window %@, first responder %@",
+           [window class], [[window firstResponder] class]);
+
 #ifdef NS_IMPL_GNUSTEP
   // Keyboard events aren't propagated to file dialogs for some reason.
   if ([NSApp modalWindow] != nil &&
@@ -6945,6 +6951,11 @@ ns_create_font_panel_buttons (id target, SEL select, SEL cancel_action)
   /* Rhapsody and macOS give up and down events for the arrow keys.  */
   if ([theEvent type] != NSEventTypeKeyDown)
     return;
+
+  if ([theEvent keyCode] == kVK_Escape)
+    NSLog (@"keyboard: Escape reaches EmacsView: %s, %s",
+           emacs_event ? "Emacs is reading input" : "Emacs is not reading input (dropped)",
+           processingCompose ? "composing (to the input method)" : "not composing");
 
   if (!emacs_event)
     return;

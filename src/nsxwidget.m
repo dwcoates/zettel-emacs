@@ -285,6 +285,8 @@ completionHandler:(void (^)(NSArray<NSURL *> *URLs))completionHandler
 
 - (void) keyDown:(NSEvent *)event
 {
+  if (event.keyCode == kVK_Escape)
+    NSLog (@"keyboard: Escape reaches the web view at %@", self.URL);
   NSView *yielded = [self yieldKeyboardUnlessSelected:@"key"];
   if (yielded)
     {
