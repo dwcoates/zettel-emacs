@@ -386,10 +386,43 @@ static NSString *xwScript;
 
 @end
 
+/* Give the keyboard to Emacs's view before LEAVING leaves its window, when
+   LEAVING holds it.  AppKit makes the window itself the first responder
+   when the first responder's view is removed from it, and a window that
+   holds the keyboard itself passes plain keys to its delegate, Emacs's
+   view, as insertText:, but sends Escape as cancelOperation:, which
+   nothing implements, so AppKit beeps.  EDGE names the removal, for the
+   log.  */
+
+static void
+nsxwidget_reclaim_keyboard (NSView *leaving, NSString *edge)
+{
+  NSWindow *window = leaving.window;
+  NSResponder *responder = window.firstResponder;
+  if (![responder isKindOfClass:[NSView class]]
+      || ![(NSView *) responder isDescendantOf:leaving])
+    return;
+  EmacsView *view = (EmacsView *) window.delegate;
+  eassert ([view isKindOfClass:[EmacsView class]]);
+  NSLog (@"xwidget: handing the keyboard back to Emacs at %@: "
+         @"the view holding it leaves the window", edge);
+  [window makeFirstResponder:view];
+}
+
 void
 nsxwidget_follow_selected_window (struct frame *f)
 {
-  NSResponder *responder = [[FRAME_NS_VIEW (f) window] firstResponder];
+  NSWindow *window = [FRAME_NS_VIEW (f) window];
+  NSResponder *responder = window.firstResponder;
+  /* A window never holds the keyboard itself; see
+     nsxwidget_reclaim_keyboard.  */
+  if (responder == window)
+    {
+      NSLog (@"xwidget: handing the keyboard back to Emacs at redisplay: "
+             @"the window held it itself");
+      [window makeFirstResponder:FRAME_NS_VIEW (f)];
+      return;
+    }
   /* The first responder may be a view inside the web view.  */
   while ([responder isKindOfClass:[NSView class]]
          && ![responder isKindOfClass:[XwWebView class]])
@@ -596,6 +629,7 @@ nsxwidget_kill (struct xwidget *xw)
       nsxwidget_webkit_goto_uri (xw, "about:blank");
 
       [((XwWebView *) xw->xwWidget).urlScriptBlocked release];
+      nsxwidget_reclaim_keyboard (xw->xwWindow, @"kill");
       [xw->xwWidget removeFromSuperviewWithoutNeedingDisplay];
 
       [xw->xwWidget release];
@@ -650,6 +684,8 @@ nsxwidget_init_view (struct xwidget_view *xv,
   xv->xvWindow.xv = xv;
 
   xw->xv = xv; /* For 1 to 1 relationship of webkit2.  */
+  /* Adding the model's view here takes it out of the view it was in.  */
+  nsxwidget_reclaim_keyboard (xw->xwWindow, @"init-view");
   [xv->xvWindow addSubview:xw->xwWindow];
 
   xv->emacswindow = FRAME_NS_VIEW (s->f);
@@ -662,9 +698,11 @@ nsxwidget_delete_view (struct xwidget_view *xv)
   if (!EQ (xv->model, Qnil))
     {
       struct xwidget *xw = XXWIDGET (xv->model);
+      nsxwidget_reclaim_keyboard (xw->xwWindow, @"delete-view");
       [xw->xwWindow removeFromSuperviewWithoutNeedingDisplay];
       xw->xv = NULL; /* Now model has no view.  */
     }
+  nsxwidget_reclaim_keyboard (xv->xvWindow, @"delete-view");
   [xv->xvWindow removeFromSuperviewWithoutNeedingDisplay];
   [xv->xvWindow release];
 }
