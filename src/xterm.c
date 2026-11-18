@@ -27029,6 +27029,25 @@ x_error_handler (Display *display, XErrorEvent *event)
     return 0;
 #endif
 
+#ifdef HAVE_XWIDGETS
+  /* Emacs makes no GLX request of its own: every one on this
+     connection is GTK's or WebKitGTK's, made for an xwidget's
+     offscreen view.  Those libraries guard their requests with GDK
+     error traps, but a trap that is popped without a sync
+     (gdk_x11_display_error_trap_pop_ignored) leaves the error to
+     arrive later, when Emacs's handler is the one installed, and
+     x_error_quitter would then kill Emacs over an error its owner
+     had already decided to ignore (a GLXBadWindow from destroying a
+     GLX window on a server with no DRI3, for one).  */
+  {
+    struct x_display_info *glx_dpyinfo = x_display_info_for_display (display);
+
+    if (glx_dpyinfo && glx_dpyinfo->glx_opcode
+	&& event->request_code == glx_dpyinfo->glx_opcode)
+      return 0;
+  }
+#endif
+
   dpyinfo = x_display_info_for_display (display);
 
   if (dpyinfo)
@@ -31179,6 +31198,16 @@ x_term_init (Lisp_Object display_name, char *xrm_option, char *resource_name)
 	&& (!strcmp (SSDATA (value), "on")
 	    || !strcmp (SSDATA (value), "true")))
       goto skip_xi_setup;
+  }
+#endif
+
+#ifdef HAVE_XWIDGETS
+  {
+    int glx_first_event, glx_first_error;
+
+    if (!XQueryExtension (dpyinfo->display, "GLX", &dpyinfo->glx_opcode,
+			  &glx_first_event, &glx_first_error))
+      dpyinfo->glx_opcode = 0;
   }
 #endif
 

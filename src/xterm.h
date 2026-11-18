@@ -845,6 +845,13 @@ struct x_display_info
   bool supports_xdbe;
 #endif
 
+#ifdef HAVE_XWIDGETS
+  /* The major opcode of the GLX extension, or 0 when the server has
+     none.  Emacs makes no GLX request of its own; see
+     x_error_handler.  */
+  int glx_opcode;
+#endif
+
 #ifdef HAVE_XINPUT2
   bool supports_xi2;
 
